@@ -288,3 +288,10 @@ python/grab*
 fpga/cpu_unit/rvlite/vhdl_source/bootrom_pkg_u2.vhd
 fpga/cpu_unit/rvlite/vhdl_source/bootrom_pkg_u2_loader.vhd
 
+
+# --- roba locale di questo fork: non va online ---
+/Giochi/
+/BACKUP-claude/
+/C64_MiSTer x 1530 source code/
+/LEGGIMI.md
+/STATO*.md
