@@ -295,3 +295,6 @@ fpga/cpu_unit/rvlite/vhdl_source/bootrom_pkg_u2_loader.vhd
 /C64_MiSTer x 1530 source code/
 /LEGGIMI.md
 /STATO*.md
+/kungfuflash/
+/kungfuflash2/
+/banco/kff_magicdesk16/

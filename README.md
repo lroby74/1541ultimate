@@ -96,11 +96,12 @@ serve it were switched off, which gave back **377 logic elements** (21,911 →
 * **What you lose:** you cannot attach a Nios II debugger over JTAG to this
   bitstream. If you develop firmware with `nios2-gdb-server`, this build is not
   for you — use the official one.
-* **What still works, and was verified:** programming the FPGA and the flash
-  with the Quartus programmer (that uses the device's own JTAG TAP, which has
-  nothing to do with the SLD hub), the **recovery image** (it loads its
-  bitstream from flash, not over JTAG), and the middle-button recovery at
-  power-on, which this firmware never overwrites.
+* **What still works:** programming the FPGA and the flash with the Quartus
+  programmer — that talks to the Cyclone IV's **own JTAG TAP**, which is
+  hardware inside the chip and has nothing to do with the SLD hub — and every
+  recovery path the cartridge has. Those are spelled out, with the file each
+  claim comes from, in *[If an update goes wrong](#if-an-update-goes-wrong)*
+  below. **Read that section before worrying about this one.**
 
 ### The RAM disk is 2 MB smaller
 
@@ -198,6 +199,80 @@ compiler.
 
 ---
 
+## If an update goes wrong
+
+Firmware for a device you cannot open is a fair thing to be careful about, so
+here is exactly what an update touches and what it cannot touch. Every claim
+below is followed by the file it comes from, in this repository, so none of it
+has to be taken on trust.
+
+### An update writes two things, and only two
+
+`software/application/update_u2p/update.cc` flashes:
+
+| | |
+|---|---|
+| `FLASH_ID_BOOTFPGA` | the runtime FPGA bitstream |
+| `FLASH_ID_APPL` | the Ultimate application |
+
+It does **not** write `FLASH_ID_BOOTAPP` — the bootloader — which lives in its
+own partition between the two (`software/io/flash/w25q_flash.cc`). And it does
+not touch the recovery flash at all: the block that would (*"Flash Recovery?"*)
+is commented out in the upstream source, and is commented out here too.
+
+### The bootloader looks at the SD card before it looks at the flash
+
+From `main()` in `software/application/2nd_boot/boot.cc`, in this order:
+
+```
+mount the SD card
+  -> load and run  recover.u2u      if present
+  -> load and run  ultimate.bin     if present
+  -> otherwise boot the application from flash
+  -> and if that fails too, wait for an XMODEM transfer on the serial port
+```
+
+So an application image that will not start is repaired by **copying a file to
+a FAT-formatted SD card and powering the machine on**. No programmer, no cable,
+no JTAG. This is the cartridge's own mechanism, not something added here, and
+this firmware cannot disable it — the bootloader is never rewritten.
+
+### And underneath that there is a second, physically separate flash
+
+The cartridge carries two flash devices, switched by a hardware line the
+firmware drives (`REMOTE_FLASHSEL`, in `update.cc` and
+`software/application/flasher/flash_fpga.cc`). The second one holds a
+**Recovery FPGA** image and a **Recovery Application**. Nothing in this firmware
+ever writes to it. How the manufacturer invokes it is not described in these
+sources, so that is a question for them rather than something to guess at here.
+
+### "You removed JTAG, so a brick cannot be recovered"
+
+This is worth answering properly, because it confuses two different things that
+share a name.
+
+* The **Cyclone IV's own JTAG TAP** is hardware inside the FPGA. It is what a
+  USB-Blaster and the Quartus Programmer talk to; it works with a blank or a
+  corrupt flash; and **no bitstream can remove it**, including this one. It is
+  untouched.
+* What was removed is the **Nios II JTAG debug module (OCI)** and the **SLD
+  hub**: soft logic *inside the design*, whose only jobs are to let
+  `nios2-gdb-server` attach to the soft CPU and to carry the JTAG UART console.
+  That is a development convenience.
+
+And the decisive point: whatever you load over JTAG to revive a board, **you
+load it over JTAG** — the design sitting in the broken flash is not running and
+is therefore irrelevant to the operation. A debug module that is not executing
+can neither help you nor stand in your way.
+
+The one thing genuinely lost is this: if you develop firmware and want to
+attach a Nios II debugger to *this* bitstream, you cannot. Use the official
+build for that. It is said plainly in *What is different from the official
+firmware*, above, because it is the honest cost of the 377 logic elements that
+made the rest of this fork fit.
+
+---
+
 ## Downloads, and what lives where
 
 * **The flashable image is not in the repository.** It is attached to a
@@ -212,9 +287,8 @@ compiler.
 * **To install**: copy the `.u2p` file to a USB stick, put the stick in the
   cartridge and power the machine on. The updater takes it from there.
 * **Keep the previous `.u2p`.** If an update ever misbehaves, the earlier
-  image is the quickest way back. The last-resort net is the one built into
-  the cartridge: **hold the middle button while powering on** to start the
-  recovery image. This firmware never writes over the recovery partition.
+  image is the quickest way back — see *[If an update goes
+  wrong](#if-an-update-goes-wrong)*.
 
 ---
 
