@@ -202,49 +202,66 @@ compiler.
 ## If an update goes wrong
 
 Firmware for a device you cannot open is a fair thing to be careful about, so
-here is exactly what an update touches and what it cannot touch. Every claim
-below is followed by the file it comes from, in this repository, so none of it
-has to be taken on trust.
+here is exactly what an update touches, what it cannot touch, and how the
+cartridge gets back on its feet. Every claim is followed by the file it comes
+from, in this repository, so none of it has to be taken on trust.
 
-### An update writes two things, and only two
+### The Ultimate-II+ carries two flash chips, and the recovery one boots first
 
-`software/application/update_u2p/update.cc` flashes:
+They are selected by a hardware line the firmware drives, `REMOTE_FLASHSEL`.
+**Flash 0** holds a *recovery* FPGA image and a *recovery* application;
+**flash 1** holds the runtime FPGA image and the Ultimate application
+(`flash_addresses_u2p[]` in `software/io/flash/w25q_flash.cc`).
+
+At power-on the FPGA always comes up from the **recovery** flash. The bootloader
+in it is built from `software/portable/nios/bootloader.c` with `RECOVERY=1`
+(`target/u2plus/nios/boot_recovery/Makefile`), and the first thing it does is
+read the buttons:
+
+```c
+    uint8_t buttons = ioRead8(ITU_BUTTON_REG) & ITU_BUTTONS;
+    if ((buttons & ITU_BUTTON1) == 0) {   // middle button not pressed
+        REMOTE_FLASHSEL_1;                // ...switch to the runtime flash
+        REMOTE_RECONFIG = 0xBE;           // ...and reconfigure the FPGA from it
+    }
+```
+
+So:
+
+* **button not held** — it switches to the runtime flash and the FPGA
+  reconfigures from it. That is the normal boot, and it is the only thing you
+  ever see.
+* **middle button held at power-on** — it stays on the recovery flash, loads the
+  recovery application and runs it. `ITU_BUTTON1` is the same button the running
+  firmware uses to open the menu (`C64::checkButton()` in
+  `software/io/c64/c64.cc` tests the same bit).
+
+The recovery application is a small file browser, and `filetype_u2p.cc` is
+linked into it (`target/u2plus/nios/recovery/Makefile`), so **from there you can
+select a `.u2p` on a USB stick and write the runtime flash again**.
+
+There is a second, smaller net in the same file: hold the **right** button
+(`ITU_BUTTON2`) and the bootloader loads the image but stops before running it —
+it prints `Lock` instead of jumping.
+
+### An update writes the runtime flash, and only the runtime flash
+
+`do_update()` in `software/application/update_u2p/update.cc` begins by selecting
+flash 1 (`REMOTE_FLASHSEL_1`) and then writes two things:
 
 | | |
 |---|---|
 | `FLASH_ID_BOOTFPGA` | the runtime FPGA bitstream |
 | `FLASH_ID_APPL` | the Ultimate application |
 
-It does **not** write `FLASH_ID_BOOTAPP` — the bootloader — which lives in its
-own partition between the two (`software/io/flash/w25q_flash.cc`). And it does
-not touch the recovery flash at all: the block that would (*"Flash Recovery?"*)
-is commented out in the upstream source, and is commented out here too.
+The block that would write the **recovery** flash — the one that starts with
+`popup("Flash Recovery?", ...)` — is inside a `/* */` comment in the upstream
+source, and is commented out here too. Nothing in this firmware can write to
+flash 0.
 
-### The bootloader looks at the SD card before it looks at the flash
-
-From `main()` in `software/application/2nd_boot/boot.cc`, in this order:
-
-```
-mount the SD card
-  -> load and run  recover.u2u      if present
-  -> load and run  ultimate.bin     if present
-  -> otherwise boot the application from flash
-  -> and if that fails too, wait for an XMODEM transfer on the serial port
-```
-
-So an application image that will not start is repaired by **copying a file to
-a FAT-formatted SD card and powering the machine on**. No programmer, no cable,
-no JTAG. This is the cartridge's own mechanism, not something added here, and
-this firmware cannot disable it — the bootloader is never rewritten.
-
-### And underneath that there is a second, physically separate flash
-
-The cartridge carries two flash devices, switched by a hardware line the
-firmware drives (`REMOTE_FLASHSEL`, in `update.cc` and
-`software/application/flasher/flash_fpga.cc`). The second one holds a
-**Recovery FPGA** image and a **Recovery Application**. Nothing in this firmware
-ever writes to it. How the manufacturer invokes it is not described in these
-sources, so that is a question for them rather than something to guess at here.
+**That is the whole answer.** The image that runs first at every power-on lives
+on a chip that no update touches, and one button gets you into it. A failed or
+bad update costs you a power cycle with a button held down, not a programmer.
 
 ### "You removed JTAG, so a brick cannot be recovered"
 
@@ -265,11 +282,18 @@ load it over JTAG** — the design sitting in the broken flash is not running an
 is therefore irrelevant to the operation. A debug module that is not executing
 can neither help you nor stand in your way.
 
-The one thing genuinely lost is this: if you develop firmware and want to
-attach a Nios II debugger to *this* bitstream, you cannot. Use the official
-build for that. It is said plainly in *What is different from the official
-firmware*, above, because it is the honest cost of the 377 logic elements that
-made the rest of this fork fit.
+The one thing genuinely lost is this: if you develop firmware and want to attach
+a Nios II debugger to *this* bitstream, you cannot. Use the official build for
+that. It is said plainly in *What is different from the official firmware*,
+above, because it is the honest cost of the 377 logic elements that made the
+rest of this fork fit.
+
+> **Correction.** An earlier revision of this section described a recovery file
+> on an SD card (`recover.u2u`). That is the **Ultimate-II**'s mechanism —
+> `software/application/2nd_boot/boot.cc`, which is built only under
+> `target/u2/`. The Ultimate-II+ has no SD card slot and does not use `.u2u`
+> files, and its bootloader is the one quoted above. Thanks to those who pointed
+> it out.
 
 ---
 
