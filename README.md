@@ -206,6 +206,22 @@ here is exactly what an update touches, what it cannot touch, and how the
 cartridge gets back on its feet. Every claim is followed by the file it comes
 from, in this repository, so none of it has to be taken on trust.
 
+### Before you flash anything: leave a spare `.u2p` on a USB stick
+
+Do this once and you will never need the rest of this section in a hurry.
+
+**Copy a known-good `.u2p` — the official firmware, or the previous version of
+this one — onto a USB stick, and leave it there.** That is exactly what the
+recovery application expects to find: it is a small file browser with
+`filetype_u2p.cc` linked into it
+(`target/u2plus/nios/recovery/Makefile`), and a USB stick is the only storage
+this cartridge has. With that stick in the drawer, the worst case below is two
+minutes: power on with the middle button held, pick the file, done.
+
+Without it, the worst case is the same two minutes *plus* finding another
+machine, downloading the firmware and formatting a stick, with a C64 that does
+not start sitting on the desk.
+
 ### The Ultimate-II+ carries two flash chips, and the recovery one boots first
 
 They are selected by a hardware line the firmware drives, `REMOTE_FLASHSEL`.
@@ -310,9 +326,9 @@ rest of this fork fit.
   exactly what this fork changed, and nothing more.
 * **To install**: copy the `.u2p` file to a USB stick, put the stick in the
   cartridge and power the machine on. The updater takes it from there.
-* **Keep the previous `.u2p`.** If an update ever misbehaves, the earlier
-  image is the quickest way back — see *[If an update goes
-  wrong](#if-an-update-goes-wrong)*.
+* **Keep the previous `.u2p`, on a USB stick.** If an update ever misbehaves,
+  that stick is the whole recovery procedure — see *[Before you flash
+  anything](#before-you-flash-anything-leave-a-spare-u2p-on-a-usb-stick)*.
 
 ---
 
