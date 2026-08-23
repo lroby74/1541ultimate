@@ -372,6 +372,17 @@ int TreeBrowser :: handle_key(int c)
             state->refresh = true;
             user_interface->help();
             break;
+        case KEY_TAPE: {
+            // Scorciatoia per il registratore.  Si passa dal sottosistema e non
+            // dal controller del nastro, che nel firmware di recovery non c'e':
+            // se non risponde nessuno, non succede niente.
+            reset_quick_seek();
+            SubsysCommand *c = new SubsysCommand(user_interface, SUBSYSID_TAPE_PLAYER,
+                                                 MENU_C2N_TAPEMENU, 0, getPath(), "");
+            c->execute();
+            state->refresh = true;
+            break;
+        }
         case KEY_CONFIG: // F2 -> config
             config();
             break;

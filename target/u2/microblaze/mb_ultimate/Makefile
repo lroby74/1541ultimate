@@ -112,6 +112,7 @@ SRCS_CC	 =  small_printf.cc \
 			ftpd.cc \
 			json.cc \
 			tape_controller.cc \
+			tape_map.cc \
 			tape_recorder.cc \
 			command_intf.cc \
 			dos.cc \

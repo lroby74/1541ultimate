@@ -355,9 +355,11 @@ void UIStringBox :: deinit(void)
 }
 
 /* Choice box */
-UIChoiceBox :: UIChoiceBox(UserInterface *ui, const char *msg, const char **choices, int count) : UIObject(ui), message(msg)
+UIChoiceBox :: UIChoiceBox(UserInterface *ui, const char *msg, const char **choices, int count,
+                           const char *note) : UIObject(ui), message(msg)
 {
     this->choices = choices;
+    this->note = note;
     this->count = count;
     this->keyboard = NULL;
     this->current = 0;
@@ -368,6 +370,9 @@ void UIChoiceBox :: init()
     Screen *screen = get_ui()->get_screen();
     
     int rows = 2 + 2 + count;  // 2 lines for title + spacing, 2 more lines for the frame
+    if (note) {
+        rows += 2;             // una riga vuota e la nota
+    }
 	int max_len = message.length();
     int len;
     for(int i=0;i<count;i++) {
@@ -378,6 +383,17 @@ void UIChoiceBox :: init()
     }
     if (max_len > 25) {
         max_len = 25;
+    }
+    if (note) {
+        // La nota puo' essere piu' larga delle voci: e' una frase, non una
+        // voce di menu.  Il tetto qui e' lo schermo del C64, 40 colonne.
+        len = strlen(note);
+        if (len > 36) {
+            len = 36;
+        }
+        if (len > max_len) {
+            max_len = len;
+        }
     }
     keyboard = get_ui()->get_keyboard();
 
@@ -409,6 +425,15 @@ void UIChoiceBox :: redraw(void)
             window->reverse_mode(0);
         }
         window->output_line(choices[i]);
+    }
+    if (note) {
+        window->set_color(get_ui()->color_fg);
+        window->set_background(get_ui()->color_bg);
+        window->reverse_mode(0);
+        window->move_cursor(0, count + 2);
+        window->output_line("");
+        window->move_cursor(0, count + 3);
+        window->output_line(note);
     }
 }
 

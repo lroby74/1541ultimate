@@ -75,4 +75,5 @@ public:
 #define KEY_HELP     0x1FB
 #define KEY_CONFIG   0x1FA
 #define KEY_SYSINFO  0x1F9
+#define KEY_TAPE     0x1F8
 #endif

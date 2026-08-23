@@ -125,6 +125,7 @@ SRCS_CC	 =  stream.cc \
 			sdio.cc \
 			sdcard_manager.cc \
 			tape_controller.cc \
+			tape_map.cc \
 			tape_recorder.cc \
 			size_str.cc \
 			userinterface.cc \

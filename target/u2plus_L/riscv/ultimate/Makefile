@@ -130,6 +130,7 @@ SRCS_CC	 =  u2pl_init.cc \
 			vfs.cc \
 			ftpd.cc \
 			tape_controller.cc \
+			tape_map.cc \
 			tape_recorder.cc \
 			command_intf.cc \
 			dos.cc \

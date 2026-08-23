@@ -1,7 +1,7 @@
 /*
  * filetype_tap.cc
  *
- * Written by 
+ * Written by
  *    Gideon Zweijtzer <info@1541ultimate.net>
  *    Daniel Kahlin <daniel@kahlin.net>
  *
@@ -29,149 +29,36 @@
 #include "menu.h"
 #include "userinterface.h"
 #include "c64.h"
-#include "dump_hex.h"
 #include "tape_controller.h"
 #include "endianness.h"
 
 // tester instance
 FactoryRegistrator<BrowsableDirEntry *, FileType *> tester_tap(FileType :: getFileTypeFactory(), FileTypeTap :: test_type);
 
-#define TAPFILE_RUN 0x3101
-#define TAPFILE_START 0x3110
-#define TAPFILE_WRITE 0x3111
-#define TAPFILE_WRITE2 0x3112
-#define TAPFILE_INDEX  0x3113
-
-#define TAPFILE_RUN_PARENT   (0x8000 | TAPFILE_RUN)
-#define TAPFILE_START_PARENT (0x8000 | TAPFILE_START)
-#define TAPFILE_WRITE_PARENT (0x8000 | TAPFILE_WRITE)
+#define TAPFILE_WRITE  0x3111
+#define TAPFILE_MOUNT  0x3114   // monta e basta, senza far partire il nastro
 
 /*************************************************************/
 /* Tap File Browser Handling                                 */
 /*************************************************************/
 
-
-FileTypeTap :: FileTypeTap(BrowsableDirEntry *node) : tapIndices(4, NULL)
+FileTypeTap :: FileTypeTap(BrowsableDirEntry *node)
 {
 	this->node = node;
 	printf("Creating Tap type from: %s\n", node->getName());
-	indexValid = false;
 }
 
 FileTypeTap :: ~FileTypeTap()
 {
-    printf("Destructor of FileTypeTap.\n");
-    if (tape_controller) {
-        tape_controller->stop();
-        tape_controller->close();
-    }
-}
-
-void FileTypeTap :: readIndexFile(void)
-{
-    FileManager *fm = FileManager :: getFileManager();
-    File *idxFile;
-
-    char filename[80];
-    strncpy(filename, node->getName(), 79);
-    filename[79] = 0;
-
-    set_extension(filename, ".idx", 80);
-
-    indexValid = false;
-    if (fm->fopen(node->getPath(), filename, FA_READ, &idxFile) == FR_OK) {
-        parseIndexFile(idxFile);
-        fm->fclose(idxFile);
-    } else {
-        printf("Cannot open index file.\n");
-    }
-}
-
-uint32_t readLine(const char *buffer, uint32_t index, char *out, int outlen)
-{
-    int i = 0;
-    // trim leading spaces and tabs
-    while ((buffer[index] == 0x20) || (buffer[index] == 0x09)) {
-        index ++;
-    }
-    while ((buffer[index] != 0x0A) && (buffer[index] != 0x00)) {
-        if (buffer[index] != 0x0D) {
-            if (i < (outlen-1)) {
-                out[i++] = buffer[index];
-            }
-        }
-        index++;
-    }
-    if ((buffer[index] == 0x0A) || (buffer[index] == 0x00)) {
-        index++;
-    }
-    out[i] = 0;
-    return index;
-}
-
-static void trimLine(char *line)
-{
-    // first truncate anything behind a semicolon
-    int len = strlen(line);
-    for (int i=0;i<len;i++) {
-        if (line[i] == ';') {
-            line[i] = 0;
-            break;
-        }
-    }
-
-    // then, remove trailing spaces
-    len = strlen(line);
-    for (int i=len-1; i >= 0; i--) {
-        if ((line[i] == ' ')||(line[i] == '\t')) {
-            line[i] = 0;
-        } else {
-            break;
-        }
-    }
-}
-
-static void parseLine(char *line, char *name, int len, uint32_t *offset)
-{
-    char *rest;
-    uint32_t value = strtol(line, &rest, 0);
-    *offset = value;
-    if (*rest) {
-        rest++;
-    }
-    name[len-1] = 0;
-    strncpy(name, rest, len-1);
-}
-
-void FileTypeTap :: parseIndexFile(File *f)
-{
-    uint32_t size = f->get_size();
-    if ((size > 8192) || (size < 8)) { // max 8K index file
-        return;
-    }
-    char *buffer = new char[size+1];
-    char *linebuf = new char[80];
-    char *name;
-
-    uint32_t transferred;
-    f->read(buffer, size, &transferred);
-    buffer[size] = 0;
-
-    uint32_t offset;
-
-    uint32_t index = 0;
-    while(index < size) {
-        index = readLine(buffer, index, linebuf, 80);
-        trimLine(linebuf);
-        if (strlen(linebuf) > 0) {
-            TapIndexEntry *entry = new TapIndexEntry;
-            parseLine(linebuf, entry->name, 28, &(entry->offset));
-            tapIndices.append(entry);
-        }
-    }
-    delete linebuf;
-    delete buffer;
-    indexValid = true;
+    // >>> Qui NON si smonta il nastro. <<<
+    // Questo oggetto e' la voce del browser, non il registratore: viene
+    // distrutto ogni volta che l'elenco della cartella si ricostruisce, cioe'
+    // ogni volta che si esce dal menu e si rientra.  Smontando qui, bastava
+    // uscire al BASIC o riaprire il menu dopo il FOUND per ritrovarsi senza
+    // nastro.  Il nastro si toglie quando lo dice l'utente (UNMOUNT TAPE), o
+    // quando se ne monta un altro: ci pensa set_file().
+    // Se il file sparisce davvero (chiavetta sfilata, file cancellato) se ne
+    // accorgono poll() e update_task_items(), che controllano isValid().
 }
 
 int FileTypeTap :: fetch_context_items(IndexedList<Action *> &list)
@@ -179,32 +66,20 @@ int FileTypeTap :: fetch_context_items(IndexedList<Action *> &list)
     int count = 0;
     uint32_t capabilities = getFpgaCapabilities();
     if(capabilities & CAPAB_C2N_STREAMER) {
-        list.append(new Action("Enter (index)", FileTypeTap :: enter_st, TAPFILE_INDEX, 0 ));
+        // Una voce sola per far partire un nastro, e porta ai comandi del 1530.
+        // Prima ce n'erano tre e si pestavano i piedi: "Play Tape" premeva PLAY
+        // e basta, "Run Tape" scriveva LOAD e RUN sul C64 al posto dell'utente.
+        // Sul 1530 vero il LOAD lo si scrive da soli (SHIFT + RUN/STOP), ed e'
+        // cosi' anche sul core C64 del MiSTer: si monta il nastro e si preme
+        // PLAY.  Qui si fa uguale.
+        list.append(new Action("Mount TAP", FileTypeTap :: execute_st, TAPFILE_MOUNT, 0 ));
         count++;
-        list.append(new Action("Run Tape", FileTypeTap :: execute_st, TAPFILE_RUN, 0 ));
-        count++;
+        // La registrazione resta: e' l'altra cosa che fa un registratore, e dal
+        // menu del nastro non si puo' fare.
         list.append(new Action("Write to Tape", FileTypeTap :: execute_st, TAPFILE_WRITE, 0 ));
         count++;
-        list.append(new Action("Start Tape", FileTypeTap :: execute_st, TAPFILE_START, 0 ));
-        count++;
-
-/*
-            for(int i=0; i < tapIndices.get_elements(); i++) {
-                list.append(new Action(tapIndices[i]->name, FileTypeTap :: execute_st, TAPFILE_START, tapIndices[i]->offset ));
-                count++;
-            }
-*/
-//        list.append(new Action("Alt. Write", FileTypeTap :: execute_st, TAPFILE_WRITE2, 0 ));
-//        count++;
     }
     return count;
-}
-
-void BrowsableTapEntry :: fetch_context_items(IndexedList<Action *> &list)
-{
-    list.append(new Action("Start From Here", FileTypeTap :: execute_st, TAPFILE_START_PARENT, tiEntry->offset ));
-    list.append(new Action("Run From Here",   FileTypeTap :: execute_st, TAPFILE_RUN_PARENT, tiEntry->offset ));
-    list.append(new Action("Write From Here", FileTypeTap :: execute_st, TAPFILE_WRITE_PARENT, tiEntry->offset ));
 }
 
 FileType *FileTypeTap :: test_type(BrowsableDirEntry *obj)
@@ -215,36 +90,6 @@ FileType *FileTypeTap :: test_type(BrowsableDirEntry *obj)
     return NULL;
 }
 
-int FileTypeTap :: getCustomBrowsables(Browsable *parentBrowsable, IndexedList<Browsable *> &list)
-{
-    if (list.get_elements())
-        return 0; // List is not empty; I have done this before.
-
-    if (!indexValid) { // no need to read again
-        this->readIndexFile();
-    }
-    if (indexValid) {
-        for(int i=0; i < tapIndices.get_elements(); i++) {
-            list.append(new BrowsableTapEntry(parentBrowsable, tapIndices[i]));
-        }
-        return 1; // OK
-    }
-    // too bad, there is no index file
-    return -1;
-}
-
-SubsysResultCode_e FileTypeTap :: enter_st(SubsysCommand *cmd)
-{
-    if (cmd->user_interface) {
-        cmd->user_interface->send_keystroke(KEY_RIGHT);
-        // if (ret < 0) {
-        //     cmd->user_interface->popup("No Index file found", BUTTON_OK);
-        // }
-        return SSRET_OK;
-    }
-    return SSRET_NO_USER_INTERFACE;
-}
-
 SubsysResultCode_e FileTypeTap :: execute_st(SubsysCommand *cmd)
 {
 	FRESULT fres;
@@ -253,19 +98,12 @@ SubsysResultCode_e FileTypeTap :: execute_st(SubsysCommand *cmd)
 	uint32_t *pul;
 	uint32_t bytes_read;
 	SubsysCommand *c64_command;
-	
+
 	tape_controller->stop();
 	tape_controller->close();
 
-	int functionID = cmd->functionID & 0x7FFF;
-	const char *fn = cmd->filename.c_str();
-
-	if (cmd->functionID & 0x8000) {
-	    fn = "";
-	}
-
 	File *file = 0;
-	fres = FileManager :: getFileManager() -> fopen(cmd->path.c_str(), fn, FA_READ, &file);
+	fres = FileManager :: getFileManager() -> fopen(cmd->path.c_str(), cmd->filename.c_str(), FA_READ, &file);
 	if(!file) {
 		cmd->user_interface->popup("Can't open TAP file.", BUTTON_OK);
 		return SSRET_CANNOT_OPEN_FILE;
@@ -280,35 +118,28 @@ SubsysResultCode_e FileTypeTap :: execute_st(SubsysCommand *cmd)
 		return SSRET_ERROR_IN_FILE_FORMAT;
 	}
 	pul = (uint32_t *)&read_buf[16];
-	tape_controller->set_file(file, le_to_cpu_32(*pul), int(read_buf[12]), cmd->mode); // the mode parameter holds the offset in the file
+	// Il nastro parte sempre dall'inizio: il punto in cui andare si sceglie col
+	// contanastro (GO TO nel menu del 1530), non dall'elenco di un file .idx.
+	tape_controller->set_file(file, le_to_cpu_32(*pul), int(read_buf[12]), 0, cmd->user_interface);
 	file = NULL; // after set file, the tape controller is now owner of the File object :)
 
-	switch(functionID) {
-	case TAPFILE_START:
-        c64_command = new SubsysCommand(cmd->user_interface, SUBSYSID_C64, C64_UNFREEZE, 0, "", "");
-        c64_command->execute();
-        vTaskDelay(50);
-        //if(cmd->user_interface->popup("Tape emulation starts now..", BUTTON_OK | BUTTON_CANCEL) == BUTTON_OK) {
-			tape_controller->start(1);
-		//}
-        printf("Tape emulation started.\n");
-		break;
-	case TAPFILE_RUN:
-        c64_command = new SubsysCommand(cmd->user_interface, SUBSYSID_C64, C64_DRIVE_LOAD, RUNCODE_TAPE_LOAD_RUN, "A", "");
-        c64_command->execute();
-        vTaskDelay(50);
-		tape_controller->start(1);
-		break;
+	switch(cmd->functionID) {
     case TAPFILE_WRITE:
         c64_command = new SubsysCommand(cmd->user_interface, SUBSYSID_C64, C64_DRIVE_LOAD, RUNCODE_TAPE_RECORD, "A", "");
         c64_command->execute();
 		tape_controller->start(2);
 		break;
-    case TAPFILE_WRITE2:
-        c64_command = new SubsysCommand(cmd->user_interface, SUBSYSID_C64, C64_DRIVE_LOAD, RUNCODE_TAPE_RECORD, "A", "");
-        c64_command->execute();
-		tape_controller->start(3);
-		break;
+    case TAPFILE_MOUNT:
+        // Il nastro e' dentro (ce l'ha messo set_file qui sopra) e NON parte:
+        // si va dritti ai comandi del 1530, perche' e' li' che si lavora.
+        // Cosi' l'utente li trova senza che nessuno debba spiegarglielo.
+        printf("Tape mounted, going to the tape menu.\n");
+        if (cmd->user_interface) {
+            c64_command = new SubsysCommand(cmd->user_interface, SUBSYSID_TAPE_PLAYER,
+                                            MENU_C2N_TAPEMENU, 0, "", "");
+            c64_command->execute();
+        }
+        break;
     default:
 		break;
 	}

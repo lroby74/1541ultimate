@@ -52,6 +52,21 @@ architecture gideon of c2n_playback_io is
     signal motor_en         : std_logic;
     signal speed_sel        : std_logic;
     signal tick_out         : std_logic;
+    -- Contanastro: posizione esatta nel file TAP.  Il firmware sa quanti byte
+    -- ha spinto nella FIFO; sottraendo i byte ancora in coda ottiene l'offset
+    -- realmente riprodotto.  'num_el' esiste gia' dentro la sync_fifo (serve a
+    -- full/almost_full), quindi esporlo non costa logica nuova.
+    signal fifo_count       : integer range 0 to 2048;
+    signal fifo_count_v     : unsigned(11 downto 0);
+    signal count_hold       : std_logic_vector(3 downto 0) := (others => '0');
+    signal status2          : std_logic_vector(7 downto 0);
+    -- Contatore dei cicli di nastro davvero passati.  E' agganciato alla
+    -- STESSA condizione che fa avanzare il nastro (vedi lo stato count_down),
+    -- quindi conta anche dentro un impulso lungo, tiene conto delle rampe di
+    -- avvio e arresto del motore, e si ferma quando il C64 e' congelato.
+    signal tape_cycles      : unsigned(31 downto 0) := (others => '0');
+    signal cycles_hold      : std_logic_vector(23 downto 0) := (others => '0');
+    signal tape_advance     : std_logic;
     attribute register_duplication  : string;
     attribute register_duplication of stream_en : signal is "no";
     attribute register_duplication of motor_en  : signal is "no";
@@ -68,12 +83,22 @@ begin
                 error <= '1';
             end if;
 
+            -- Un ciclo di nastro passato.  La condizione e' identica a quella
+            -- che decrementa il contatore dell'impulso: cosi' il conto e' il
+            -- nastro vero, non il tempo dell'orologio.
+            if tape_advance = '1' then
+                tape_cycles <= tape_cycles + 1;
+            end if;
+
             -- bus handling
             resp <= c_io_resp_init;
             fifo_flush <= '0';
             if req.write='1' then
                 resp.ack <= '1'; -- ack for fifo write as well.
-                if req.address(11)='0' then
+                if req.address(11)='0' and req.address(2 downto 0) = "100" then
+                    -- azzeramento del contatore dei cicli di nastro
+                    tape_cycles <= (others => '0');
+                elsif req.address(11)='0' then
                     enabled <= req.data(0);
                     if req.data(1)='1' then
                         error <= '0';
@@ -86,7 +111,29 @@ begin
                 end if;
             elsif req.read='1' then
                 resp.ack <= '1';
-                resp.data <= status;
+                case req.address(2 downto 0) is
+                when "001" =>
+                    resp.data <= status2;
+                when "010" =>
+                    -- byte basso del riempimento FIFO; contemporaneamente
+                    -- congela i 4 bit alti, cosi' le due letture sono coerenti
+                    resp.data <= std_logic_vector(fifo_count_v(7 downto 0));
+                    count_hold <= std_logic_vector(fifo_count_v(11 downto 8));
+                when "011" =>
+                    resp.data <= "0000" & count_hold;
+                when "100" =>
+                    -- byte piu' basso dei cicli di nastro; congela gli altri tre
+                    resp.data   <= std_logic_vector(tape_cycles(7 downto 0));
+                    cycles_hold <= std_logic_vector(tape_cycles(31 downto 8));
+                when "101" =>
+                    resp.data <= cycles_hold(7 downto 0);
+                when "110" =>
+                    resp.data <= cycles_hold(15 downto 8);
+                when "111" =>
+                    resp.data <= cycles_hold(23 downto 16);
+                when others =>
+                    resp.data <= status;
+                end case;
             end if;
 
             case state is
@@ -177,6 +224,11 @@ begin
         end if;
     end process;
     
+    -- Il nastro avanza di un ciclo quando il player conta giu' l'impulso in
+    -- corso: stessa identica condizione dello stato count_down.
+    tape_advance <= '1' when (state = count_down) and (enabled = '1') and (tick_out = '1')
+                         and (stream_en = '1') and (c64_stopped = '0') else '0';
+
     fifo_write <= req.write and req.address(11); -- 0x800-0xFFF (2K) 
     fifo_read  <= '0' when state = count_down else (stream_en and not fifo_empty);
 
@@ -202,7 +254,7 @@ begin
         full        => fifo_full,
         almost_full => fifo_almostfull,
         empty       => fifo_empty,
-        count       => open );
+        count       => fifo_count );
 
     status(0) <= enabled;
     status(1) <= error;
@@ -212,6 +264,16 @@ begin
     status(5) <= state_enc(1);
     status(6) <= stream_en;
     status(7) <= fifo_empty;
+
+    fifo_count_v <= to_unsigned(fifo_count, fifo_count_v'length);
+
+    -- Stato del trasporto, per il contanastro e per l'interfaccia:
+    -- il motore lo comanda il C64, il sense lo legge il C64.
+    status2(0) <= motor_en;
+    status2(1) <= c2n_sense_in;
+    status2(2) <= stream_en;
+    status2(3) <= error;
+    status2(7 downto 4) <= (others => '0');
 
     -- mode 0: no output
     -- mode 1: negative pulse on read

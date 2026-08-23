@@ -72,6 +72,17 @@ public:
     void init();
     void deinit(void);
     int  poll(int);
+
+    // Quale tasto e' quello acceso.  Serve per far ripetere lo stesso comando
+    // con INVIO: senza, ogni volta che la finestra si riapre si torna al primo.
+    // Va chiamato DOPO init(), che lo riporta a zero.
+    void setActiveButton(int b) {
+        if (b < 0) b = 0;
+        if (b >= btns_active) b = btns_active - 1;
+        active_button = b;
+        if (window) draw_buttons();
+    }
+    int getActiveButton(void) { return active_button; }
 };
 
 class UIStringEdit
@@ -134,18 +145,32 @@ class UIChoiceBox : public UIObject
 private:
     mstring  message;
     const char **choices;
+    // Una riga di nota in fondo alla finestra, staccata dalle voci e NON
+    // selezionabile: serve a dire una scorciatoia senza sporcare l'elenco.
+    // Zero se non ce n'e' bisogno; il testo e' una costante del chiamante.
+    const char *note;
     int      count;
     int      current;
     Window  *window;
     Keyboard *keyboard;
 public:
-    UIChoiceBox(UserInterface *ui, const char *msg, const char **choices, int count);
+    UIChoiceBox(UserInterface *ui, const char *msg, const char **choices, int count,
+                const char *note = 0);
     ~UIChoiceBox() { }
 
     void init();
     void deinit(void);
     int  poll(int);
     void redraw(void);
+
+    // Quale voce e' selezionata, per riaprire il menu dov'era rimasto.
+    void setCurrent(int c) {
+        if (c < 0) c = 0;
+        if (c >= count) c = count - 1;
+        current = c;
+        if (window) redraw();
+    }
+    int getCurrent(void) { return current; }
 };
 
 

@@ -12,6 +12,7 @@
 #ifndef UPDATER
 #ifndef RECOVERYAPP
 #include "c1541.h"
+#include "subsys.h"
 #endif // RECOVERYAPP
 #endif // UPDATER
 #endif // NO_FILE_ACCESS
@@ -61,6 +62,8 @@ static const char *helptext =
     #ifndef RECOVERYAPP
         "F4:         Show System Information\n"
         "F6:         Search Assembly64\n"
+        "F8:         Tape (1530) menu\n"
+        "C= + button: Tape menu, straight away\n"
     #endif
         "\n"
         "SPACE:      Select file / directory\n"
@@ -296,6 +299,36 @@ void UserInterface :: run_once(void)
     }
 
     set_available(true);
+
+    // >>> Scorciatoia: C= tenuto premuto insieme al tasto del menu apre
+    // direttamente il menu del nastro. <<<
+    // La tastiera del C64 si puo' leggere solo a macchina ferma, ed e' ferma
+    // adesso: l'ha congelata take_ownership() due righe piu' su.  Col tasto
+    // del freezer non si potrebbe fare: se c'e' una cartuccia con freezer
+    // (Action Replay) quel tasto se lo prende lei in hardware, e quando il
+    // firmware se ne accorge il C64 sta gia' girando dentro la ROM della
+    // cartuccia.
+#ifndef UPDATER
+#ifndef RECOVERYAPP
+    if (host->isCommodoreDown()) {
+        SubsysCommand *c = new SubsysCommand(this, SUBSYSID_TAPE_PLAYER,
+                                             MENU_C2N_TAPEMENU, 0, "", "");
+        c->execute();
+        set_available(false);
+        if (!host->is_permanent()) {
+            release_host();   // ATTENZIONE: questa mette doBreak a true
+        }
+        host->release_ownership();
+        // ...e qui si rimette com'era, esattamente come fa la fine di
+        // run_once().  Se resta a true, la volta dopo il giro del menu non
+        // parte nemmeno: la cornice si disegna, il browser no, e nessuno
+        // scongela piu' il C64.  E' successo davvero.
+        doBreak = false;
+        return;
+    }
+#endif
+#endif
+
     while(!doBreak) {
         host->checkButton();
         if (!host->exists()) {
@@ -559,6 +592,48 @@ int  UserInterface :: popup(const char *msg, int count, const char **names, cons
     return ret;
 }
 
+int  UserInterface :: popup(const char *msg, int count, const char **names, const char *keys, int *active)
+{
+    UIPopup *pop = new UIPopup(this, msg, (1 << (count + 1))-1, count, names, keys);
+    pop->init();
+    if (active) {
+        pop->setActiveButton(*active);   // dopo init(), che lo azzera
+    }
+    int ret = 0;
+    while(!ret && host->exists()) {
+        ret = pop->poll(0);
+    }
+    if (active) {
+        *active = pop->getActiveButton();
+    }
+    pop->deinit();
+    delete pop;
+    return ret;
+}
+
+int UserInterface :: choice(const char *msg, const char **choices, int count, int *active,
+                            const char *note)
+{
+    UIChoiceBox *box = new UIChoiceBox(this, msg, choices, count, note);
+    box->init();
+    if (active) {
+        box->setCurrent(*active);
+    }
+    screen->cursor_visible(0);
+    int ret = 0;
+    while(!ret && host->exists()) {
+        ret = box->poll(0);
+    }
+    if (active) {
+        *active = box->getCurrent();
+    }
+    delete box;
+    if (!ret && !host->exists()) {
+        return MENU_CLOSE;
+    }
+    return (ret > 0) ? (ret - 1) : ret;
+}
+
 int UserInterface :: string_box(const char *msg, char *buffer, int maxlen)
 {
     UIStringBox *box = new UIStringBox(this, msg, buffer, maxlen);
@@ -694,6 +769,7 @@ int UserInterface :: keymapper(int c, keymap_options_t map)
     case KEY_F2: c = KEY_CONFIG; break;
     case KEY_F4: c = KEY_SYSINFO; break;
     case KEY_F6: c = KEY_SEARCH; break;
+    case KEY_F8: c = KEY_TAPE; break;
     }
     return c;
 }

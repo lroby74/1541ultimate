@@ -36,12 +36,18 @@ class UserInterface;
 #define SUBSYSID_PRINTER         10
 #define SUBSYSID_ULTICOPY        11
 
+// Il menu del nastro si apre anche da fuori (F8 nel browser), senza che
+// chi lo apre debba conoscere il controller del nastro: basta mandare
+// questo comando al sottosistema, che sui firmware dove il nastro non
+// c'e' (recovery) semplicemente non risponde.
+#define MENU_C2N_TAPEMENU  0x3200
+
 #define SORT_ORDER_ASSEMBLY 5
 #define SORT_ORDER_CREATE  10
 #define SORT_ORDER_C64     20
 #define SORT_ORDER_DRIVES  30
 #define SORT_ORDER_SOFTIEC 40
-#define SORT_ORDER_TAPE    50
+#define SORT_ORDER_TAPE     1  // in cima: e' quello che si cerca piu' spesso
 #define SORT_ORDER_PRINTER 60
 #define SORT_ORDER_CONFIG  70
 #define SORT_ORDER_DEVELOPER 999

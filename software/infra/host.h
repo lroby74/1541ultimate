@@ -27,6 +27,9 @@ public:
     virtual Keyboard *getKeyboard(void) { return NULL; }
 
     virtual void checkButton(void) {  }
+    // Il tasto C= della tastiera della macchina, se la macchina ce l'ha e se
+    // in questo momento e' leggibile.  Serve alle scorciatoie del menu.
+    virtual bool isCommodoreDown(void) { return false; }
     virtual bool buttonPush(void) { return false; }
     virtual bool hasButton(void) { return false; }
     virtual void setButtonPushed(void) {  }
