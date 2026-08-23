@@ -6,9 +6,11 @@ ARCHITECTURE = nios2
 include ../../../common/environment.mk
 
 # Outputs
-RESULT    = $(shell pwd)/result
+# Percorsi RELATIVI: con $(shell pwd) assoluto, make spezza il bersaglio
+# sullo spazio se l'albero sta in una cartella che ne contiene uno.
+RESULT    = ./result
 OUTPUT    = ./output
-OUTPUT_FP = $(shell pwd)/output
+OUTPUT_FP = ./output
 
 PRJ      =  liblwip
 #PATH_SW  =  ../../../software
@@ -99,6 +101,7 @@ OPTIONS  = -g -Os -mno-hw-div -mno-hw-mul -mno-hw-mulx -ffunction-sections -DNIO
 COPTIONS = $(OPTIONS) -std=c99 
 CPPOPT   = $(OPTIONS) -fno-exceptions -fno-rtti
 LINK 	 = ./mb_app.lds
+AR       = $(CROSS)ar
 LLIB     =  
 #LIBS     = -lstdc++ -lsupc++ -lgcc --start-group -lxil -lc -lm --end-group -lgcc
 LIBS     =  -lc -lgcc
