@@ -1,13 +1,13 @@
-// (C) 2001-2015 Altera Corporation. All rights reserved.
-// Your use of Altera Corporation's design tools, logic functions and other 
+// (C) 2001-2017 Intel Corporation. All rights reserved.
+// Your use of Intel Corporation's design tools, logic functions and other 
 // software and tools, and its AMPP partner logic functions, and any output 
 // files any of the foregoing (including device programming or simulation 
 // files), and any associated documentation or information are expressly subject 
-// to the terms and conditions of the Altera Program License Subscription 
-// Agreement, Altera MegaCore Function License Agreement, or other applicable 
+// to the terms and conditions of the Intel Program License Subscription 
+// Agreement, Intel MegaCore Function License Agreement, or other applicable 
 // license agreement, including, without limitation, that your use is for the 
-// sole purpose of programming logic devices manufactured by Altera and sold by 
-// Altera or its authorized distributors.  Please refer to the applicable 
+// sole purpose of programming logic devices manufactured by Intel and sold by 
+// Intel or its authorized distributors.  Please refer to the applicable 
 // agreement for further details.
 
 
@@ -24,9 +24,9 @@
 // agreement for further details.
 
 
-// $Id: //acds/rel/15.1/ip/merlin/altera_merlin_multiplexer/altera_merlin_multiplexer.sv.terp#1 $
+// $Id: //acds/rel/17.0std/ip/merlin/altera_merlin_multiplexer/altera_merlin_multiplexer.sv.terp#1 $
 // $Revision: #1 $
-// $Date: 2015/08/09 $
+// $Date: 2017/01/22 $
 // $Author: swbranch $
 
 // ------------------------------------------
@@ -45,7 +45,7 @@
 //   PIPELINE_ARB:        1
 //   PKT_TRANS_LOCK:      72 (arbitration locking enabled)
 //   ST_DATA_W:           108
-//   ST_CHANNEL_W:        6
+//   ST_CHANNEL_W:        5
 // ------------------------------------------
 
 module nios_solo_mm_interconnect_0_cmd_mux
@@ -55,7 +55,7 @@ module nios_solo_mm_interconnect_0_cmd_mux
     // ----------------------
     input                       sink0_valid,
     input [108-1   : 0]  sink0_data,
-    input [6-1: 0]  sink0_channel,
+    input [5-1: 0]  sink0_channel,
     input                       sink0_startofpacket,
     input                       sink0_endofpacket,
     output                      sink0_ready,
@@ -66,7 +66,7 @@ module nios_solo_mm_interconnect_0_cmd_mux
     // ----------------------
     output                      src_valid,
     output [108-1    : 0] src_data,
-    output [6-1 : 0] src_channel,
+    output [5-1 : 0] src_channel,
     output                      src_startofpacket,
     output                      src_endofpacket,
     input                       src_ready,
@@ -77,12 +77,12 @@ module nios_solo_mm_interconnect_0_cmd_mux
     input clk,
     input reset
 );
-    localparam PAYLOAD_W        = 108 + 6 + 2;
+    localparam PAYLOAD_W        = 108 + 5 + 2;
     localparam NUM_INPUTS       = 1;
     localparam SHARE_COUNTER_W  = 1;
     localparam PIPELINE_ARB     = 1;
     localparam ST_DATA_W        = 108;
-    localparam ST_CHANNEL_W     = 6;
+    localparam ST_CHANNEL_W     = 5;
     localparam PKT_TRANS_LOCK   = 72;
 
     assign	src_valid			=  sink0_valid;
@@ -92,6 +92,5 @@ module nios_solo_mm_interconnect_0_cmd_mux
     assign	src_endofpacket		        =  sink0_endofpacket;
     assign	sink0_ready			=  src_ready;
 endmodule
-
 
 
