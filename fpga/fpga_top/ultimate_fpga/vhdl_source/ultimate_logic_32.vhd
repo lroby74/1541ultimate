@@ -269,6 +269,18 @@ end ultimate_logic_32;
 
 
 architecture logic of ultimate_logic_32 is
+    -- La finestra ROM della cartuccia. Sulla Ultimate-II+ e' da 2 MB e sta
+    -- a 0x2000000 (Magic Desk 2 arriva a 128 banchi da 16K); sulla II sta
+    -- dov'e' sempre stata, perche' la sua mappa di memoria e' diversa.
+    function f_rom_base_cart(u2plus : boolean) return std_logic_vector is
+    begin
+        if u2plus then
+            return X"2000000";  -- 2 MB, allineata a 2 MB
+        else
+            return X"0F00000";  -- 1 MB, come prima
+        end if;
+    end function;
+    constant c_rom_base_cart : std_logic_vector(27 downto 0) := f_rom_base_cart(g_ultimate2plus);
 
     function to_std(b : boolean) return std_logic is
     begin
@@ -843,7 +855,7 @@ begin
             g_tag_slot      => c_tag_slot,
             g_tag_reu       => c_tag_reu,
             g_ram_base_reu  => X"1000000", -- should be on 16M boundary, or should be limited in size
-            g_rom_base_cart => X"0F00000", -- should be on a 1M boundary
+            g_rom_base_cart => c_rom_base_cart, -- 2 MB on the U2+, see f_rom_base_cart
             g_ram_base_cart => X"0EF0000", -- should be on a 64K boundary
             g_kernal_base   => X"0EA8000", -- should be on a 32K boundary
             g_register_addr => g_register_addr,

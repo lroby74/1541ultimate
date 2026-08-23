@@ -380,13 +380,18 @@ PROVIDE( __drive_a_area  = 0x0EE0000 );
 PROVIDE( __cart_ram_start = 0x0EF0000 );
 PROVIDE( __cart_ram_limit = 0x0F00000 );
 
-PROVIDE( __cart_rom_start = 0x0F00000 );
-PROVIDE( __cart_rom_limit = 0x1000000 );
+/* La ROM della cartuccia e' passata da 1 a 2 MB per Magic Desk 2, che
+   arriva a 128 banchi da 16K. Non poteva restare a 0x0F00000: sotto
+   c'e' la RAM della cartuccia e sopra comincia subito la REU. I 2 MB
+   li cede il disco RAM, che passa da 16 a 14 MB e non ne risente,
+   perche' si formatta all'avvio sulla misura che trova qui. */
+PROVIDE( __cart_rom_start = 0x2000000 );
+PROVIDE( __cart_rom_limit = 0x2200000 );
 
 PROVIDE( __reu_ram_start = 0x1000000 );
 PROVIDE( __reu_ram_limit = 0x2000000 );
 
-PROVIDE( __ram_disk_start = 0x2000000 );
+PROVIDE( __ram_disk_start = 0x2200000 );
 PROVIDE( __ram_disk_limit = 0x3000000 );
 
 PROVIDE( __updater_start = 0x3000000 );

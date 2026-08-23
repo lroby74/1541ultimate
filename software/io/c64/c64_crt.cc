@@ -82,6 +82,9 @@ const struct C64_CRT::t_cart C64_CRT::c_recognized_c64_carts[] = {
     { 72, 0xFF, CART_NOT_IMPL,  "Lt. Kernal Host Adaptor" },
     { 73, 0xFF, CART_NOT_IMPL,  "RAMLink" },
     { 74, 0xFF, CART_NOT_IMPL,  "H.E.R.O." },
+    // VICE lo chiama "Magic Desk 16K" (magicdesk16.c) ed e' il nome scritto
+    // dentro i CRT; il core C64 del MiSTer lo chiama Magic Desk 2.
+    { 85, 0xFF, CART_MAGICDESK2, "Magic Desk 16K" }, // max 128 banchi da 16K = 2 MB
     { 0xFFFF, 0xFF, CART_NOT_IMPL, "" } };
 
 const struct C64_CRT::t_cart C64_CRT::c_recognized_c128_carts[] = {
@@ -275,7 +278,10 @@ SubsysResultCode_e C64_CRT::read_chip_packet(File *f, t_crt_chip_chunk *chunk)
 
     uint32_t offset = uint32_t(bank) * bank_multiplier;
     offset += (load & 0x2000); // switch between 8000 and A000
-    if (offset > 0x1000000) { // max 1 MB
+    // Il limite vero e' la finestra ROM. Prima qui c'era 0x1000000, che pero'
+    // e' 16 MB, non 1: il controllo non scattava mai e una cartuccia troppo
+    // grande finiva a scrivere oltre la finestra.
+    if ((offset + size) > CART_ROM_SIZE) {
         return SSRET_ROM_IMAGE_TOO_LARGE;
     }
 
@@ -318,7 +324,7 @@ SubsysResultCode_e C64_CRT::read_chip_packet(File *f, t_crt_chip_chunk *chunk)
 
 void C64_CRT::clear_cart_mem(void)
 {
-    memset(cart_memory, 0xff, 1024 * 1024); // clear all cart memory
+    memset(cart_memory, 0xff, CART_ROM_SIZE); // clear all cart memory
 }
 
 void C64_CRT::auto_mirror(void)
@@ -333,8 +339,8 @@ void C64_CRT::auto_mirror(void)
     while (size <= highest_bank) {
         size <<= 1;
     }
-    // we support 1MB of cart memory, so max 64 banks
-    while(size < 64) {
+    // 2 MB di finestra ROM, quindi al massimo 128 banchi da 16K
+    while(size < (int)(CART_ROM_SIZE / (16*1024))) {
         // mirror the data
         printf("Mirroring %6x bytes from %p to %p.\n", size * bank_multiplier, cart_memory, cart_memory + size * bank_multiplier);
         memcpy(cart_memory + size * bank_multiplier, cart_memory, size * bank_multiplier);
@@ -476,6 +482,10 @@ void C64_CRT::configure_cart(cart_def *def)
             break;
         case CART_DOMARK:
             cart_type = CART_TYPE_DOMARK;
+            prohibit = CART_PROHIBIT_DEXX;
+            break;
+        case CART_MAGICDESK2:
+            cart_type = CART_TYPE_MAGICDESK2;
             prohibit = CART_PROHIBIT_DEXX;
             break;
         case CART_OCEAN_8K:

@@ -96,6 +96,7 @@ struct t_cfg_definition c64_config[] = {
     { CFG_C64_DMA_ID,   CFG_TYPE_VALUE,  "DMA Load Mimics ID:",          "%d", NULL,       8, 31, 8 },
 #ifndef U64
     { CFG_C64_SWAP_BTN, CFG_TYPE_ENUM,   "Button order",                 "%s", buttons,    0,  1, 1 },
+    { CFG_C64_RESETCLEAR, CFG_TYPE_ENUM, "Reset Button Clears RAM",      "%s", en_dis,     0,  1, 1 },
 #endif
 #if CLOCK_FREQ == 62500000
     { CFG_C64_TIMING,   CFG_TYPE_ENUM,   "CPU Addr valid after PHI2",    "%s", timing2,    0,  15, 6 },
@@ -149,6 +150,7 @@ C64::C64()
     isFrozen = false;
     backupIsValid = false;
     buttonPushSeen = false;
+    resetLineSeen = false;
     client = 0;
     available = false;
     clear_cart_definition(&current_cart_def);
@@ -849,7 +851,41 @@ void C64::unfreeze()
     isFrozen = false;
 }
 
-void C64 :: start_cartridge(void *vdef)
+// Il disegno che la RAM del C64 ha appena acceso: 64 byte a zero e 64 a $FF,
+// che si ripetono.  Non e' un dettaglio estetico: e' quello che distingue una
+// macchina appena accesa da una appena resettata, e certi giochi ci si appoggiano
+// per capire se devono ripartire da capo o riprendere.
+void C64 :: clear_ram(void)
+{
+    if (!phi2_present()) {
+        return;
+    }
+    bool i_stopped_it = false;
+    if (!is_stopped()) {
+        stop(false);
+        i_stopped_it = true;
+    }
+    C64_MODE = MODE_NORMAL;   // solo in modo normale le scritture finiscono in RAM
+
+    uint8_t disegno[256];
+    for (int i = 0; i < 256; i++) {
+        disegno[i] = (i & 0x40) ? 0xFF : 0x00;
+    }
+    for (uint32_t a = 0; a < 0x10000; a += 256) {
+        // Lo spazio I/O non si tocca: li' non c'e' RAM da pulire, ci sono i
+        // registri del VIC, del SID e dei CIA.
+        if ((a >= 0xD000) && (a < 0xE000)) {
+            continue;
+        }
+        memcpy((void *)(C64_MEMORY_BASE + a), disegno, 256);
+    }
+
+    if (i_stopped_it) {
+        resume();
+    }
+}
+
+void C64 :: start_cartridge(void *vdef, bool clearRam)
 {
     cart_def *def = (cart_def *) vdef;
 
@@ -869,6 +905,14 @@ void C64 :: start_cartridge(void *vdef)
     // To be discussed: Should this only happen with the reboot command?
     C64_MODE = MODE_NORMAL;
     C64_POKE(0x8005, 0);
+
+    // Se ce lo chiedono, si riparte come da macchina appena accesa.  Cancellare
+    // la sola firma CBM80 non basta: un gioco che tiene il suo stato in RAM lo
+    // ritrova intatto e riprende da dov'era invece di ricominciare.
+    if (clearRam) {
+        clear_ram();
+        C64_MODE = MODE_NORMAL;   // clear_ram puo' averlo cambiato
+    }
 
     // Now, let's reset the machine and release it into run mode
     C64_MODE = C64_MODE_RESET;
@@ -1170,6 +1214,91 @@ void C64::init_cartridge()
 
     C64_MODE = C64_MODE_UNRESET;
     C64_STOP = 0;
+}
+
+// Il tasto reset della cartuccia resetta il C64, ma la RAM non la tocca
+// nessuno: un gioco che tiene la partita in RAM la ritrova intatta e riprende
+// da dov'era invece di ricominciare.  E' quello che succede con Magic Desk 2.
+//
+// Che non sia colpa del mapper e' misurato: banco/md2_sim/md2_reset_tb.vhd
+// preme il tasto e guarda l'indirizzo che esce dall'FPGA, e il banco torna a
+// zero da solo.  Quindi a ricordarsi la partita e' la RAM del C64, e la si
+// pulisce da qui, esattamente come fa il caricamento di un CRT.
+//
+// La linea RESET si legge dalla porta cartuccia (status.reset_in): la muovono
+// il tasto, il firmware e il C64 stesso.  Si guarda solo il fronte, cioe' il
+// momento in cui scende, e si agisce una volta sola per pressione.
+void C64 :: checkResetButton(void)
+{
+    if (!available) {
+        return;
+    }
+    if (!phi2_present()) {
+        // C64 spento: non c'e' niente da resettare.  La linea la si da' per
+        // gia' vista bassa, altrimenti all'accensione - che comincia proprio
+        // con un reset - si scambierebbe l'accensione per una pressione del
+        // tasto.  Lo dice il banco: banco/reset_cart/reset_edge_tb.cc
+        resetLineSeen = true;
+        return;
+    }
+
+    bool adesso = c64_reset_detect();
+    bool prima  = resetLineSeen;
+    resetLineSeen = adesso;
+
+    if (!adesso || prima) {  // interessa solo il fronte
+        return;
+    }
+    if (isFrozen || is_stopped()) {  // menu aperto o freezer: non e' il tasto
+        return;
+    }
+    if (current_cart_def.type == CART_TYPE_NONE) {
+        return;              // senza cartuccia il reset resta quello di sempre
+    }
+    if (!cfg->get_value(CFG_C64_RESETCLEAR)) {
+        return;              // chi preferisce il reset caldo lo spegne da qui
+    }
+
+    // start_cartridge azzera current_cart_def prima di ricopiarcelo dentro: se
+    // gli passassimo l'originale, si troverebbe la scheda gia' vuota.
+    cart_def copia = current_cart_def;
+    start_cartridge(&copia, true);
+
+    // Il tasto puo' essere ancora premuto, e il nostro stesso reset ha appena
+    // mosso la linea: si riprende la fotografia adesso, altrimenti al rilascio
+    // si vedrebbe un fronte che non c'e' mai stato.
+    resetLineSeen = c64_reset_detect();
+}
+
+// C= premuto?  Una lettura sola della matrice, non tutto lo scan.
+//
+// La tastiera del C64 la legge il C64: noi possiamo farlo solo quando la
+// macchina e' ferma e i registri dei CIA sono nostri, cioe' dopo un freeze.
+// (Sul C128 il C= al reset lo legge la ROM della macchina, che a quel punto e'
+// padrona di se stessa: e' la stessa cosa vista dall'altra parte.)
+//
+// Riga PA7 della matrice, quella di RUN/STOP Q C= SPAZIO 2 CTRL <- 1:
+// si tira giu' PA7 e si guarda il bit 5 della porta B.
+bool C64 :: isCommodoreDown(void)
+{
+    if (!is_accessible()) {   // macchina non ferma: la tastiera non e' nostra
+        return false;
+    }
+    CIA1_DPA = 0x7F;
+    CIA1_DPA = 0x7F;          // due volte, come fa lo scan: la scrittura passa
+                              // dal ponte e la porta ci mette un attimo
+    uint8_t riga = CIA1_DPB;
+    for (int i = 0; i < 8; i++) {   // finche' due letture non concordano
+        CIA1_DPA = 0x7F;      // si tiene giu' la riga fra una e l'altra,
+        uint8_t ancora = CIA1_DPB;   // esattamente come fa lo scan
+        if (ancora == riga) {
+            break;
+        }
+        riga = ancora;
+    }
+    CIA1_DPA = 0xFF;          // si rilascia la riga, come la trova lo scan
+
+    return (riga & 0x20) == 0;
 }
 
 bool C64::buttonPush(void)

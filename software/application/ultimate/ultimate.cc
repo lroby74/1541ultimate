@@ -157,6 +157,7 @@ extern "C" void ultimate_main(void *a)
     while(c64) {
         int doIt = 0;
         c64->checkButton();
+        c64->checkResetButton();
         if (c64->buttonPush()) {
             doIt = 1;
         }

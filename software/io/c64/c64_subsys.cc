@@ -260,7 +260,7 @@ SubsysResultCode_e C64_Subsys::executeCommand(SubsysCommand *cmd)
                 c64->client->release_host(); // disconnect from user interface
                 c64->client = 0;
             }
-            c64->start_cartridge(NULL);
+            c64->start_cartridge(NULL, true);   // riavvio: RAM come da accensione
             break;
 
         case C64_START_CART:
@@ -268,7 +268,10 @@ SubsysResultCode_e C64_Subsys::executeCommand(SubsysCommand *cmd)
                 c64->client->release_host(); // disconnect from user interface
                 c64->client = 0;
             }
-            c64->start_cartridge((cart_def *)cmd->mode);
+            // Una cartuccia si infila in una macchina spenta, non in una che sta
+            // gia' girando: senza la pulizia, ricaricare lo stesso CRT fa
+            // riprendere il gioco da dov'era.
+            c64->start_cartridge((cart_def *)cmd->mode, true);
             break;
 
         case MENU_C64_SAVEREU:

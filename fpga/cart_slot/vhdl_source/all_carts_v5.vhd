@@ -68,7 +68,7 @@ architecture gideon of all_carts_v5 is
     signal reset_in     : std_logic;
 
     signal rom_mode     : std_logic_vector(14 downto 13) := "11";
-    signal bank_bits    : std_logic_vector(19 downto 13);
+    signal bank_bits    : std_logic_vector(20 downto 13);  -- bit 20 = secondo MB
     signal ram_bank     : std_logic_vector(15 downto 13) := "000";
     signal mode_bits    : std_logic_vector(2 downto 0);
     signal ef_write     : std_logic := '0';
@@ -108,6 +108,7 @@ architecture gideon of all_carts_v5 is
     constant c_blackbox_v8  : std_logic_vector(4 downto 0) := "01100";
     constant c_zaxxon       : std_logic_vector(4 downto 0) := "01101";
     constant c_blackbox_v9  : std_logic_vector(4 downto 0) := "01110";
+    constant c_magic_desk2  : std_logic_vector(4 downto 0) := "01111";
 
     -- Simple bankers with RAM
     constant c_pagefox      : std_logic_vector(4 downto 0) := "10000";
@@ -345,6 +346,21 @@ begin
                 exrom_n   <= '0';
                 serve_rom <= '1';
                 rom_mode  <= "01"; -- 16K banks
+
+            -- Magic Desk 2 (CRT tipo 85).  Scrittura a $DE00:
+            --   bit 6..0 = banco da 16K   (qui 6 bit: il ROM window e' 1 MB)
+            --   bit 7    = 1 spegne la cartuccia (game e exrom a riposo)
+            -- cart_en resta acceso apposta, cosi' una scrittura successiva con
+            -- il bit 7 a zero puo' riaccenderla, come fa il cartridge.v del MiSTer.
+            when c_magic_desk2 =>
+                if io_write='1' and io_addr(8)='0' then -- DE00 range
+                    bank_bits(20 downto 14) <= io_wdata(6 downto 0); -- max 128 banchi da 16K = 2 MB
+                    mode_bits(0)            <= io_wdata(7);
+                end if;
+                game_n    <= mode_bits(0);
+                exrom_n   <= mode_bits(0);
+                serve_rom <= not mode_bits(0);
+                rom_mode  <= "01"; -- banchi da 16K
 
             when c_system3 => -- 16K, only 8K used?
                 if (io_write='1' or io_read='1') and io_addr(8)='0' then -- DE00 range
@@ -643,7 +659,7 @@ begin
     begin
         rom_addr <= g_rom_base;
         rom_addr(12 downto 0) <= slot_addr(12 downto 0);
-        rom_addr(19 downto 13) <= bank_bits;
+        rom_addr(20 downto 13) <= bank_bits;
         if rom_mode(13)='1' then
             rom_addr(13) <= slot_addr(13);
         end if;

@@ -11,6 +11,8 @@
 
 #define ROMS_DIRECTORY "/flash/roms"
 
+// Finestra ROM della cartuccia: 2 MB, serve a Magic Desk 2 (128 banchi da 16K).
+#define CART_ROM_SIZE   (2*1024*1024)
 #define REU_MEMORY_BASE 0x1000000
 #define REU_MAX_SIZE    0x1000000
 
@@ -137,6 +139,7 @@
 #define CART_TYPE_BLACKBOX_V8 0x0C
 #define CART_TYPE_ZAXXON      0x0D
 #define CART_TYPE_BLACKBOX_V9 0x0E
+#define CART_TYPE_MAGICDESK2  0x0F // banchi da 16K, spegnimento col bit 7
 
 #define CART_TYPE_PAGEFOX     0x10
 #define CART_TYPE_EASY_FLASH  0x11 // ?
@@ -223,6 +226,7 @@
 #define CFG_CMD_ALLOW_WRITE 0x72
 #define CFG_C64_FASTRESET   0x74
 #define CFG_C64_DO_SYNC     0x75
+#define CFG_C64_RESETCLEAR  0x76
 #define CFG_C64_REU_PRE     0x80
 #define CFG_C64_REU_IMG     0x81
 #define CFG_C64_REU_OFFS    0x82
@@ -296,6 +300,7 @@ class C64 : public GenericHost, ConfigurableObject
 
     volatile bool buttonPushSeen;
     volatile bool available;
+    volatile bool resetLineSeen;   // com'era la linea RESET all'ultimo giro
 
     void setup_config_menu();
     bool isFrozen;
@@ -315,13 +320,20 @@ class C64 : public GenericHost, ConfigurableObject
     void freeze(void);
     void measure_timing(uint8_t *buffer);
     virtual void get_all_memory(uint8_t *) { /* NOT YET IMPLEMENTED */ };
-    virtual void clear_ram(void) { /* NOT YET IMPLEMENTED */ };
+    // Riempie la RAM del C64 col disegno che ha all'accensione.  Sulla U64
+    // e' rifatta usando il canale DMA dedicato; qui si passa dal ponte DMA
+    // della porta cartuccia, che e' l'unico che c'e'.
+    virtual void clear_ram(void);
     static uint8_t get_exrom_game(void) {
         return (C64_CLOCK_DETECT & 0x0C) >> 2;
     }
+public:
+    // Il clock del bus c'e' o no, cioe' se il C64 e' acceso.  E' una lettura di
+    // un registro nostro: non tocca il C64 e non gli ruba niente.
     static bool phi2_present(void) {
         return (C64_CLOCK_DETECT & C64_CD_PHI2_DETECT) == C64_CD_PHI2_DETECT;
     }
+private:
     static bool powered_by_c64(void) {
         return (C64_CLOCK_DETECT & C64_CD_VCC_DETECT) == C64_CD_VCC_DETECT;
     }
@@ -358,6 +370,8 @@ public:
     }
 
     void checkButton(void);
+    void checkResetButton(void);
+    bool isCommodoreDown(void);
     bool hasButton(void) {
     	return true;
     }
@@ -381,7 +395,9 @@ public:
     /* C64 specifics */
     void resetConfigInFlash(int page);
     void unfreeze(void);
-    void start_cartridge(void *def);
+    // clearRam = true fa partire la cartuccia come su una macchina appena
+    // accesa.  Senza, il gioco ritrova la RAM di prima e riprende da dov'era.
+    void start_cartridge(void *def, bool clearRam = false);
     void enable_kernal(uint8_t *rom);
     void set_rom_config(uint8_t idx, const char *fname);
     void init_cartridge(void);
@@ -405,7 +421,7 @@ public:
     static int getSizeOfMP3NativeRamdrive(int dev);
 
     static uint8_t *get_cartridge_rom_addr(void) {
-        extern uint8_t __cart_rom_start[1024*1024];
+        extern uint8_t __cart_rom_start[CART_ROM_SIZE];
         return __cart_rom_start;
     }
 
